@@ -1,0 +1,52 @@
+{
+  "name": "can-already",
+  "version": "1.0.0",
+  "description": "High-performance TypeScript authorization library with O(1) permission checks",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest",
+    "test:watch": "vitest --watch",
+    "test:coverage": "vitest --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "authorization",
+    "permissions",
+    "security",
+    "typescript",
+    "cancan",
+    "rbac",
+    "access-control"
+  ],
+  "author": "",
+  "license": "NoHarm",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "@vitest/coverage-v8": "^1.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/can-already.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/can-already/issues"
+  },
+  "homepage": "https://github.com/your-org/can-already#readme",
+  "dependencies": {}
+}
