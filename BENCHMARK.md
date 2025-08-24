@@ -147,10 +147,3 @@ npm run build
 node benchmark.js
 ```
 
-## Conclusion
-
-CanAlready delivers on its promise of being a high-performance drop-in replacement for CanCan. The benchmark results demonstrate that CanAlready not only maintains full API compatibility but provides **massive performance improvements** that scale exponentially with application size.
-
-For any application with more than a few hundred permissions, CanAlready is clearly the superior choice, offering **near-instantaneous permission checks** regardless of the complexity of your authorization model.
-
-**Bottom Line**: CanAlready is not just an alternative to CanCan - it's a significant upgrade that unlocks new possibilities for permission-heavy applications.
