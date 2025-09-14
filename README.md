@@ -5,6 +5,7 @@ A high-performance TypeScript authorization library with O(1) permission checks,
 ## Features
 
 - **O(1) Performance**: Constant-time permission lookups using object storage
+- **Multi-Role Support**: Check permissions for users with multiple roles
 - **Strong TypeScript Support**: Fully typed with generic support for custom roles, actions, and resources
 - **CanCan Compatibility**: Drop-in replacement with familiar API
 - **Wildcard Support**: `*` and `manage` wildcard permissions
@@ -58,6 +59,23 @@ try {
 ```
 
 ## Advanced Usage
+
+### Multi-Role Support
+
+Users can have multiple roles and CanAlready will check all roles for permissions:
+
+```typescript
+// Check permissions for multiple roles
+can([UserRole.USER, UserRole.MODERATOR], UserAction.DELETE, UserResource.COMMENT); // true if ANY role has permission
+
+// Works with all permission methods
+cannot([UserRole.USER, UserRole.GUEST], UserAction.WRITE, UserResource.POST);
+authorize([UserRole.USER, UserRole.MODERATOR], UserAction.READ, UserResource.POST);
+
+// Maintains O(1) performance per role
+const userRoles = [UserRole.USER, UserRole.PREMIUM, UserRole.BETA];
+can(userRoles, UserAction.READ, UserResource.FEATURE); // Still very fast!
+```
 
 ### Condition Functions
 
@@ -139,14 +157,14 @@ interface CanAlreadyOptions<Role, Action, Resource> {
 #### `allow(role, action, resource, condition?)`
 Define permissions. All parameters accept single values or arrays.
 
-#### `can(role, action, resource, options?)`
-Check if permission is granted. Returns boolean.
+#### `can(role | role[], action, resource, options?)`
+Check if permission is granted. Accepts single role or array of roles. Returns boolean.
 
-#### `cannot(role, action, resource, options?)`
-Inverse of `can()`. Returns boolean.
+#### `cannot(role | role[], action, resource, options?)`
+Inverse of `can()`. Accepts single role or array of roles. Returns boolean.
 
-#### `authorize(role, action, resource, options?)`
-Like `can()` but throws error if access denied.
+#### `authorize(role | role[], action, resource, options?)`
+Like `can()` but throws error if access denied. Accepts single role or array of roles.
 
 #### `exportPermissions(roles)`
 Export permissions for specified roles as JSON string.

@@ -17,7 +17,13 @@ class CanAlready {
             }
         };
         this.can = (role, action, resource, options) => {
-            const result = this.checkPermission(role, action, resource, options);
+            let result = false;
+            const roles = Array.isArray(role) ? role : [role];
+            for (const r of roles) {
+                result = this.checkPermission(r, action, resource, options);
+                if (result)
+                    break;
+            }
             if (this.options.debug) {
                 this.logDebug('can', role, action, resource, result);
             }
@@ -34,7 +40,10 @@ class CanAlready {
             const canAccess = this.can(role, action, resource, options);
             if (!canAccess) {
                 const allowedRoles = this.findAllowedRoles(action, resource, options);
-                const message = `Access denied for role '${this.options.roleResolver(role)}' to perform '${this.options.actionResolver(action)}' on '${this.options.resourceResolver(resource)}'`;
+                const roleString = Array.isArray(role)
+                    ? role.map(r => this.options.roleResolver(r)).join(',')
+                    : this.options.roleResolver(role);
+                const message = `Access denied for role '${roleString}' to perform '${this.options.actionResolver(action)}' on '${this.options.resourceResolver(resource)}'`;
                 throw this.options.errorFactory(message, allowedRoles);
             }
             if (this.options.debug) {
@@ -183,7 +192,9 @@ class CanAlready {
     logDebug(operation, role, action, resource, result) {
         const debugInfo = {
             operation,
-            role: this.options.roleResolver(role),
+            role: Array.isArray(role)
+                ? role.map(r => this.options.roleResolver(r)).join(',')
+                : this.options.roleResolver(role),
             action: this.options.actionResolver(action),
             resource: this.options.resourceResolver(resource),
             result,

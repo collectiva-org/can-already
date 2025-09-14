@@ -358,6 +358,76 @@ describe('CanAlready', () => {
     });
   });
 
+  describe('Multi-role support', () => {
+    beforeEach(() => {
+      canAlready.allow(UserRole.USER, UserAction.READ, UserResource.POST);
+      canAlready.allow(UserRole.MODERATOR, UserAction.DELETE, UserResource.COMMENT);
+      canAlready.allow(UserRole.ADMIN, '*' as any, '*' as any);
+    });
+
+    it('should check permissions for multiple roles and return true if any role has permission', () => {
+      expect(canAlready.can([UserRole.USER, UserRole.MODERATOR], UserAction.READ, UserResource.POST)).toBe(true);
+      expect(canAlready.can([UserRole.USER, UserRole.MODERATOR], UserAction.DELETE, UserResource.COMMENT)).toBe(true);
+      expect(canAlready.can([UserRole.USER, UserRole.ADMIN], UserAction.WRITE, UserResource.PROFILE)).toBe(true);
+    });
+
+    it('should return false if none of the roles have permission', () => {
+      expect(canAlready.can([UserRole.USER, UserRole.MODERATOR], UserAction.WRITE, UserResource.PROFILE)).toBe(false);
+    });
+
+    it('should work with single role (backwards compatibility)', () => {
+      expect(canAlready.can(UserRole.USER, UserAction.READ, UserResource.POST)).toBe(true);
+      expect(canAlready.can(UserRole.USER, UserAction.WRITE, UserResource.POST)).toBe(false);
+    });
+
+    it('should work with empty roles array', () => {
+      expect(canAlready.can([], UserAction.READ, UserResource.POST)).toBe(false);
+    });
+
+    it('should work with condition functions for multi-role', () => {
+      const condition = (role: UserRole, action: UserAction, resource: UserResource, options?: any) => {
+        return options?.userId === options?.targetUserId;
+      };
+
+      canAlready.allow(UserRole.USER, UserAction.WRITE, UserResource.PROFILE, condition);
+      
+      expect(canAlready.can([UserRole.USER, UserRole.MODERATOR], UserAction.WRITE, UserResource.PROFILE, { 
+        userId: 1, targetUserId: 1 
+      })).toBe(true);
+      
+      expect(canAlready.can([UserRole.USER, UserRole.MODERATOR], UserAction.WRITE, UserResource.PROFILE, { 
+        userId: 1, targetUserId: 2 
+      })).toBe(false);
+    });
+
+    it('should support cannot() with multiple roles', () => {
+      expect(canAlready.cannot([UserRole.USER, UserRole.MODERATOR], UserAction.READ, UserResource.POST)).toBe(false);
+      expect(canAlready.cannot([UserRole.USER, UserRole.MODERATOR], UserAction.WRITE, UserResource.PROFILE)).toBe(true);
+    });
+
+    it('should support authorize() with multiple roles', () => {
+      expect(() => {
+        canAlready.authorize([UserRole.USER, UserRole.MODERATOR], UserAction.READ, UserResource.POST);
+      }).not.toThrow();
+
+      expect(() => {
+        canAlready.authorize([UserRole.USER, UserRole.MODERATOR], UserAction.WRITE, UserResource.PROFILE);
+      }).toThrow('Access denied');
+    });
+
+    it('should log debug info for multi-role when debug is enabled', () => {
+      const debugCanAlready = new CanAlready({ ...defaultOptions, debug: true });
+      debugCanAlready.allow(UserRole.USER, UserAction.READ, UserResource.POST);
+      
+      debugCanAlready.can([UserRole.USER, UserRole.MODERATOR], UserAction.READ, UserResource.POST);
+      
+      expect(consoleDebugSpy).toHaveBeenCalledWith('CanAlready:', expect.objectContaining({
+        operation: 'can',
+        result: true
+      }));
+    });
+  });
+
   describe('Edge cases', () => {
     it('should handle empty permission storage', () => {
       expect(canAlready.can(UserRole.USER, UserAction.READ, UserResource.POST)).toBe(false);

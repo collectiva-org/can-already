@@ -35,12 +35,18 @@ export class CanAlready<Role = string, Action = string, Resource = string> {
   };
 
   can = (
-    role: Role,
+    role: Role | Role[],
     action: Action,
     resource: Resource,
     options?: any
   ): boolean => {
-    const result = this.checkPermission(role, action, resource, options);
+    let result = false;
+    const roles = Array.isArray(role) ? role : [role];
+    
+    for (const r of roles) {
+      result = this.checkPermission(r, action, resource, options);
+      if (result) break;
+    }
     
     if (this.options.debug) {
       this.logDebug('can', role, action, resource, result);
@@ -50,7 +56,7 @@ export class CanAlready<Role = string, Action = string, Resource = string> {
   };
 
   cannot = (
-    role: Role,
+    role: Role | Role[],
     action: Action,
     resource: Resource,
     options?: any
@@ -65,7 +71,7 @@ export class CanAlready<Role = string, Action = string, Resource = string> {
   };
 
   authorize = (
-    role: Role,
+    role: Role | Role[],
     action: Action,
     resource: Resource,
     options?: any
@@ -74,7 +80,10 @@ export class CanAlready<Role = string, Action = string, Resource = string> {
     
     if (!canAccess) {
       const allowedRoles = this.findAllowedRoles(action, resource, options);
-      const message = `Access denied for role '${this.options.roleResolver(role)}' to perform '${this.options.actionResolver(action)}' on '${this.options.resourceResolver(resource)}'`;
+      const roleString = Array.isArray(role) 
+        ? role.map(r => this.options.roleResolver(r)).join(',')
+        : this.options.roleResolver(role);
+      const message = `Access denied for role '${roleString}' to perform '${this.options.actionResolver(action)}' on '${this.options.resourceResolver(resource)}'`;
       throw this.options.errorFactory(message, allowedRoles);
     }
 
@@ -263,14 +272,16 @@ export class CanAlready<Role = string, Action = string, Resource = string> {
 
   private logDebug(
     operation: 'can' | 'cannot' | 'authorize',
-    role: Role,
+    role: Role | Role[],
     action: Action,
     resource: Resource,
     result: boolean
   ): void {
     const debugInfo: DebugInfo = {
       operation,
-      role: this.options.roleResolver(role),
+      role: Array.isArray(role) 
+        ? role.map(r => this.options.roleResolver(r)).join(',')
+        : this.options.roleResolver(role),
       action: this.options.actionResolver(action),
       resource: this.options.resourceResolver(resource),
       result,
