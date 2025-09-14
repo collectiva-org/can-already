@@ -1,13 +1,13 @@
 import { CanAlreadyOptions, ConditionFunction } from './types';
-export declare class CanAlready<Role = string, Action = string, Resource = string> {
+export declare class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, Action = string, Resource = string> {
     private storage;
     private options;
-    constructor(options: CanAlreadyOptions<Role, Action, Resource>);
-    allow: (role: Role | Role[], action: Action | Action[], resource: Resource | Resource[], condition?: ConditionFunction<Role, Action, Resource>) => void;
-    can: (role: Role | Role[], action: Action, resource: Resource, options?: any) => boolean;
-    cannot: (role: Role | Role[], action: Action, resource: Resource, options?: any) => boolean;
-    authorize: (role: Role | Role[], action: Action, resource: Resource, options?: any) => void;
-    exportPermissions: (roles: Role[]) => string;
+    constructor(options: CanAlreadyOptions<DefinitionRole | RuntimeRole, Action, Resource>);
+    allow: (role: DefinitionRole | DefinitionRole[], action: Action | Action[], resource: Resource | Resource[], condition?: ConditionFunction<RuntimeRole, Action, Resource>) => void;
+    can: (role: RuntimeRole | RuntimeRole[], action: Action, resource: Resource, options?: any) => boolean;
+    cannot: (role: RuntimeRole | RuntimeRole[], action: Action, resource: Resource, options?: any) => boolean;
+    authorize: (role: RuntimeRole | RuntimeRole[], action: Action, resource: Resource, options?: any) => void;
+    exportPermissions: (roles: DefinitionRole[]) => string;
     importPermissions: (permissionsJson: string) => void;
     private setPermission;
     private checkPermission;

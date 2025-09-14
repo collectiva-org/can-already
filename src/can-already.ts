@@ -7,19 +7,19 @@ import {
   SerializablePermission
 } from './types';
 
-export class CanAlready<Role = string, Action = string, Resource = string> {
-  private storage: PermissionStorage<Role, Action, Resource> = {};
-  private options: CanAlreadyOptions<Role, Action, Resource>;
+export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, Action = string, Resource = string> {
+  private storage: PermissionStorage<RuntimeRole, Action, Resource> = {};
+  private options: CanAlreadyOptions<DefinitionRole | RuntimeRole, Action, Resource>;
 
-  constructor(options: CanAlreadyOptions<Role, Action, Resource>) {
+  constructor(options: CanAlreadyOptions<DefinitionRole | RuntimeRole, Action, Resource>) {
     this.options = options;
   }
 
   allow = (
-    role: Role | Role[],
+    role: DefinitionRole | DefinitionRole[],
     action: Action | Action[],
     resource: Resource | Resource[],
-    condition?: ConditionFunction<Role, Action, Resource>
+    condition?: ConditionFunction<RuntimeRole, Action, Resource>
   ): void => {
     const roles = Array.isArray(role) ? role : [role];
     const actions = Array.isArray(action) ? action : [action];
@@ -35,7 +35,7 @@ export class CanAlready<Role = string, Action = string, Resource = string> {
   };
 
   can = (
-    role: Role | Role[],
+    role: RuntimeRole | RuntimeRole[],
     action: Action,
     resource: Resource,
     options?: any
@@ -56,7 +56,7 @@ export class CanAlready<Role = string, Action = string, Resource = string> {
   };
 
   cannot = (
-    role: Role | Role[],
+    role: RuntimeRole | RuntimeRole[],
     action: Action,
     resource: Resource,
     options?: any
@@ -71,7 +71,7 @@ export class CanAlready<Role = string, Action = string, Resource = string> {
   };
 
   authorize = (
-    role: Role | Role[],
+    role: RuntimeRole | RuntimeRole[],
     action: Action,
     resource: Resource,
     options?: any
@@ -92,7 +92,7 @@ export class CanAlready<Role = string, Action = string, Resource = string> {
     }
   };
 
-  exportPermissions = (roles: Role[]): string => {
+  exportPermissions = (roles: DefinitionRole[]): string => {
     const roleKeys = roles.map(role => this.options.roleResolver(role));
     const exportData: SerializablePermission = {};
 
@@ -141,7 +141,7 @@ export class CanAlready<Role = string, Action = string, Resource = string> {
           } else if (typeof permission === 'string' && this.options.conditionImporter) {
             const condition = this.options.conditionImporter(permission);
             if (condition) {
-              this.storage[role][action][resource] = condition as ConditionFunction<Role, Action, Resource>;
+              this.storage[role][action][resource] = condition as ConditionFunction<RuntimeRole, Action, Resource>;
             }
           }
         }
@@ -150,10 +150,10 @@ export class CanAlready<Role = string, Action = string, Resource = string> {
   };
 
   private setPermission(
-    role: Role,
+    role: DefinitionRole,
     action: Action,
     resource: Resource,
-    permission: PermissionValue<Role, Action, Resource>
+    permission: PermissionValue<RuntimeRole, Action, Resource>
   ): void {
     const roleKey = this.options.roleResolver(role);
     let actionKey = this.options.actionResolver(action);
@@ -175,7 +175,7 @@ export class CanAlready<Role = string, Action = string, Resource = string> {
   }
 
   private checkPermission(
-    role: Role,
+    role: RuntimeRole,
     action: Action,
     resource: Resource,
     options?: any
@@ -266,13 +266,13 @@ export class CanAlready<Role = string, Action = string, Resource = string> {
     return allowedRoles;
   }
 
-  private parseRoleFromKey(roleKey: string): Role {
-    return roleKey as unknown as Role;
+  private parseRoleFromKey(roleKey: string): RuntimeRole {
+    return roleKey as unknown as RuntimeRole;
   }
 
   private logDebug(
     operation: 'can' | 'cannot' | 'authorize',
-    role: Role | Role[],
+    role: RuntimeRole | RuntimeRole[],
     action: Action,
     resource: Resource,
     result: boolean

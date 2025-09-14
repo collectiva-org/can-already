@@ -1,4 +1,4 @@
-export type ConditionFunction<Role, Action, Resource> = (role: Role, action: Action, resource: Resource, options?: any) => boolean;
+export type ConditionFunction<RuntimeRole, Action, Resource> = (role: RuntimeRole, action: Action, resource: Resource, options?: any) => boolean;
 export type RoleResolver<Role> = (role: Role) => string;
 export type ActionResolver<Action> = (action: Action) => string;
 export type ResourceResolver<Resource> = (resource: Resource) => string;
@@ -14,11 +14,11 @@ export interface CanAlreadyOptions<Role, Action, Resource> {
     conditionExporter?: ConditionExporter;
     conditionImporter?: ConditionImporter;
 }
-export type PermissionValue<Role, Action, Resource> = boolean | ConditionFunction<Role, Action, Resource>;
-export type PermissionStorage<Role, Action, Resource> = {
+export type PermissionValue<RuntimeRole, Action, Resource> = boolean | ConditionFunction<RuntimeRole, Action, Resource>;
+export type PermissionStorage<RuntimeRole, Action, Resource> = {
     [role: string]: {
         [action: string]: {
-            [resource: string]: PermissionValue<Role, Action, Resource>;
+            [resource: string]: PermissionValue<RuntimeRole, Action, Resource>;
         };
     };
 };

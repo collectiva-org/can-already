@@ -1,5 +1,5 @@
-export type ConditionFunction<Role, Action, Resource> = (
-  role: Role,
+export type ConditionFunction<RuntimeRole, Action, Resource> = (
+  role: RuntimeRole,
   action: Action,
   resource: Resource,
   options?: any
@@ -24,14 +24,14 @@ export interface CanAlreadyOptions<Role, Action, Resource> {
   conditionImporter?: ConditionImporter;
 }
 
-export type PermissionValue<Role, Action, Resource> = 
+export type PermissionValue<RuntimeRole, Action, Resource> = 
   | boolean 
-  | ConditionFunction<Role, Action, Resource>;
+  | ConditionFunction<RuntimeRole, Action, Resource>;
 
-export type PermissionStorage<Role, Action, Resource> = {
+export type PermissionStorage<RuntimeRole, Action, Resource> = {
   [role: string]: {
     [action: string]: {
-      [resource: string]: PermissionValue<Role, Action, Resource>;
+      [resource: string]: PermissionValue<RuntimeRole, Action, Resource>;
     };
   };
 };
