@@ -79,7 +79,7 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
     const canAccess = this.can(role, action, resource, options);
     
     if (!canAccess) {
-      const allowedRoles = this.findAllowedRoles(action, resource, options);
+      const allowedRoles = this.findAllowedRoles(action, resource);
       const roleString = Array.isArray(role) 
         ? role.map(r => this.options.roleResolver(r)).join(',')
         : this.options.roleResolver(role);
@@ -213,7 +213,6 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
   private findAllowedRoles(
     action: Action,
     resource: Resource,
-    options?: any
   ): string[] {
     const actionKey = this.options.actionResolver(action);
     const resourceKey = this.options.resourceResolver(resource);
@@ -229,38 +228,16 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
 
       for (const [a, res] of checkPaths) {
         const permission = this.storage[roleKey]?.[a]?.[res];
-        
-        if (permission !== undefined) {
-          let hasPermission = false;
-          
-          if (typeof permission === 'boolean') {
-            hasPermission = permission;
-          } else if (typeof permission === 'function') {
-            try {
-              hasPermission = permission(
-                this.parseRoleFromKey(roleKey),
-                action,
-                resource,
-                options
-              );
-            } catch (error) {
-              hasPermission = false;
-            }
-          }
-
-          if (hasPermission && !allowedRoles.includes(roleKey)) {
+        if (permission === true || typeof permission === 'function') {
+          if (!allowedRoles.includes(roleKey)) {
             allowedRoles.push(roleKey);
-            break;
           }
+          break;
         }
       }
     }
 
     return allowedRoles;
-  }
-
-  private parseRoleFromKey(roleKey: string): RuntimeRole {
-    return roleKey as unknown as RuntimeRole;
   }
 
   private logDebug(
