@@ -240,15 +240,15 @@ describe('CanAlready with Dual Generics', () => {
   });
 
   describe('Error handling', () => {
-    it('should handle condition function errors gracefully', () => {
+    it('should let condition function errors bubble up', () => {
       const errorCondition = () => {
         throw new Error('Condition error');
       };
 
       canAlready.allow(SimpleRole.USER, 'read', 'post', errorCondition);
-      
+
       const user = createUserRole('user', '1', 'org1');
-      expect(canAlready.can(user, 'read', 'post')).toBe(false);
+      expect(() => canAlready.can(user, 'read', 'post')).toThrow('Condition error');
     });
 
     it('should handle empty roles array', () => {

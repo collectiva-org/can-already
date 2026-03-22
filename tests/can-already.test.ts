@@ -92,14 +92,14 @@ describe('CanAlready', () => {
       })).toBe(false);
     });
 
-    it('should handle condition function errors gracefully', () => {
+    it('should let condition function errors bubble up', () => {
       const errorCondition = () => {
         throw new Error('Condition error');
       };
 
       canAlready.allow(UserRole.USER, UserAction.READ, UserResource.POST, errorCondition);
-      
-      expect(canAlready.can(UserRole.USER, UserAction.READ, UserResource.POST)).toBe(false);
+
+      expect(() => canAlready.can(UserRole.USER, UserAction.READ, UserResource.POST)).toThrow('Condition error');
     });
   });
 

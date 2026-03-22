@@ -202,14 +202,7 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
         if (typeof permission === 'boolean') {
           return permission;
         } else if (typeof permission === 'function') {
-          try {
-            return permission(role, action, resource, options);
-          } catch (error) {
-            if (this.options.debug) {
-              console.debug('Condition function error:', error);
-            }
-            return false;
-          }
+          return permission(role, action, resource, options);
         }
       }
     }
