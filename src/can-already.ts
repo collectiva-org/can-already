@@ -79,14 +79,9 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
     resource: Resource,
     options?: any
   ): boolean => {
-    let result = false;
     const roles = Array.isArray(role) ? role : [role];
-    
-    for (const r of roles) {
-      result = this.checkPermission(r, action, resource, options);
-      if (result) break;
-    }
-    
+    const result = roles.some(r => this.checkPermission(r, action, resource, options));
+
     if (this.options.debug) {
       this.logDebug('can', role, action, resource, result);
     }
@@ -100,13 +95,7 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
     resource: Resource,
     options?: any
   ): boolean => {
-    const result = !this.can(role, action, resource, options);
-    
-    if (this.options.debug) {
-      this.logDebug('cannot', role, action, resource, result);
-    }
-
-    return result;
+    return !this.can(role, action, resource, options);
   };
 
   authorize = (
@@ -119,10 +108,7 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
     
     if (!canAccess) {
       const allowedRoles = this.findAllowedRoles(action, resource);
-      const roleString = Array.isArray(role) 
-        ? role.map(r => this.options.roleResolver(r)).join(',')
-        : this.options.roleResolver(role);
-      const message = `Access denied for role '${roleString}' to perform '${this.options.actionResolver(action)}' on '${this.options.resourceResolver(resource)}'`;
+      const message = `Access denied for role '${this.resolveRoleString(role)}' to perform '${this.options.actionResolver(action)}' on '${this.options.resourceResolver(resource)}'`;
       throw this.options.errorFactory(message, allowedRoles);
     }
 
@@ -279,6 +265,12 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
     return allowedRoles;
   }
 
+  private resolveRoleString(role: RuntimeRole | RuntimeRole[]): string {
+    return Array.isArray(role)
+      ? role.map(r => this.options.roleResolver(r)).join(',')
+      : this.options.roleResolver(role);
+  }
+
   private logDebug(
     operation: 'can' | 'cannot' | 'authorize',
     role: RuntimeRole | RuntimeRole[],
@@ -288,9 +280,7 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
   ): void {
     const debugInfo: DebugInfo = {
       operation,
-      role: Array.isArray(role) 
-        ? role.map(r => this.options.roleResolver(r)).join(',')
-        : this.options.roleResolver(role),
+      role: this.resolveRoleString(role),
       action: this.options.actionResolver(action),
       resource: this.options.resourceResolver(resource),
       result,
