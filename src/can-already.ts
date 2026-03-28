@@ -34,6 +34,45 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
     }
   };
 
+  copyPermissions = (
+    fromRole: DefinitionRole,
+    toRole: DefinitionRole,
+    options?: { allowOverwrite?: boolean }
+  ): void => {
+    const fromKey = this.options.roleResolver(fromRole);
+    const toKey = this.options.roleResolver(toRole);
+
+    const sourcePermissions = this.storage[fromKey];
+    if (!sourcePermissions) {
+      throw new Error(`No permissions found for role '${fromKey}'`);
+    }
+
+    if (!options?.allowOverwrite) {
+      for (const action in sourcePermissions) {
+        for (const resource in sourcePermissions[action]) {
+          if (this.storage[toKey]?.[action]?.[resource] !== undefined) {
+            throw new Error(
+              `Permission conflict: role '${toKey}' already has a permission for action '${action}' on resource '${resource}'`
+            );
+          }
+        }
+      }
+    }
+
+    if (!this.storage[toKey]) {
+      this.storage[toKey] = {};
+    }
+
+    for (const action in sourcePermissions) {
+      if (!this.storage[toKey][action]) {
+        this.storage[toKey][action] = {};
+      }
+      for (const resource in sourcePermissions[action]) {
+        this.storage[toKey][action][resource] = sourcePermissions[action][resource];
+      }
+    }
+  };
+
   can = (
     role: RuntimeRole | RuntimeRole[],
     action: Action,

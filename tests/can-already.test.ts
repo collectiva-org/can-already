@@ -428,6 +428,89 @@ describe('CanAlready', () => {
     });
   });
 
+  describe('copyPermissions()', () => {
+    it('should copy all permissions from one role to another', () => {
+      canAlready.allow(UserRole.USER, UserAction.READ, UserResource.POST);
+      canAlready.allow(UserRole.USER, UserAction.READ, UserResource.COMMENT);
+
+      canAlready.copyPermissions(UserRole.USER, UserRole.MODERATOR);
+
+      expect(canAlready.can(UserRole.MODERATOR, UserAction.READ, UserResource.POST)).toBe(true);
+      expect(canAlready.can(UserRole.MODERATOR, UserAction.READ, UserResource.COMMENT)).toBe(true);
+    });
+
+    it('should preserve existing permissions on the target role', () => {
+      canAlready.allow(UserRole.MODERATOR, UserAction.DELETE, UserResource.COMMENT);
+      canAlready.allow(UserRole.USER, UserAction.READ, UserResource.POST);
+
+      canAlready.copyPermissions(UserRole.USER, UserRole.MODERATOR);
+
+      expect(canAlready.can(UserRole.MODERATOR, UserAction.DELETE, UserResource.COMMENT)).toBe(true);
+      expect(canAlready.can(UserRole.MODERATOR, UserAction.READ, UserResource.POST)).toBe(true);
+    });
+
+    it('should be a snapshot, not a live link', () => {
+      canAlready.allow(UserRole.USER, UserAction.READ, UserResource.POST);
+      canAlready.copyPermissions(UserRole.USER, UserRole.MODERATOR);
+
+      canAlready.allow(UserRole.USER, UserAction.WRITE, UserResource.POST);
+
+      expect(canAlready.can(UserRole.MODERATOR, UserAction.READ, UserResource.POST)).toBe(true);
+      expect(canAlready.can(UserRole.MODERATOR, UserAction.WRITE, UserResource.POST)).toBe(false);
+    });
+
+    it('should copy condition functions', () => {
+      const condition = (role: UserRole, action: UserAction, resource: UserResource, options?: any) => {
+        return options?.userId === options?.targetUserId;
+      };
+
+      canAlready.allow(UserRole.USER, UserAction.WRITE, UserResource.PROFILE, condition);
+      canAlready.copyPermissions(UserRole.USER, UserRole.MODERATOR);
+
+      expect(canAlready.can(UserRole.MODERATOR, UserAction.WRITE, UserResource.PROFILE, {
+        userId: 1, targetUserId: 1
+      })).toBe(true);
+      expect(canAlready.can(UserRole.MODERATOR, UserAction.WRITE, UserResource.PROFILE, {
+        userId: 1, targetUserId: 2
+      })).toBe(false);
+    });
+
+    it('should throw when source role has no permissions', () => {
+      expect(() => {
+        canAlready.copyPermissions(UserRole.USER, UserRole.MODERATOR);
+      }).toThrow("No permissions found for role 'user'");
+    });
+
+    it('should throw when target role has overlapping permissions', () => {
+      canAlready.allow(UserRole.USER, UserAction.READ, UserResource.POST);
+      canAlready.allow(UserRole.MODERATOR, UserAction.READ, UserResource.POST);
+
+      expect(() => {
+        canAlready.copyPermissions(UserRole.USER, UserRole.MODERATOR);
+      }).toThrow("Permission conflict: role 'moderator' already has a permission for action 'read' on resource 'post'");
+    });
+
+    it('should allow overwriting when allowOverwrite is true', () => {
+      const conditionA = () => false;
+      const conditionB = () => true;
+
+      canAlready.allow(UserRole.USER, UserAction.READ, UserResource.POST, conditionB);
+      canAlready.allow(UserRole.MODERATOR, UserAction.READ, UserResource.POST, conditionA);
+
+      canAlready.copyPermissions(UserRole.USER, UserRole.MODERATOR, { allowOverwrite: true });
+
+      expect(canAlready.can(UserRole.MODERATOR, UserAction.READ, UserResource.POST)).toBe(true);
+    });
+
+    it('should copy wildcard permissions', () => {
+      canAlready.allow(UserRole.ADMIN, '*' as any, '*' as any);
+      canAlready.copyPermissions(UserRole.ADMIN, UserRole.MODERATOR);
+
+      expect(canAlready.can(UserRole.MODERATOR, UserAction.READ, UserResource.POST)).toBe(true);
+      expect(canAlready.can(UserRole.MODERATOR, UserAction.DELETE, UserResource.COMMENT)).toBe(true);
+    });
+  });
+
   describe('Edge cases', () => {
     it('should handle empty permission storage', () => {
       expect(canAlready.can(UserRole.USER, UserAction.READ, UserResource.POST)).toBe(false);
