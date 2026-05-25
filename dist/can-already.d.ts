@@ -4,6 +4,9 @@ export declare class CanAlready<DefinitionRole = string, RuntimeRole = Definitio
     private options;
     constructor(options: CanAlreadyOptions<DefinitionRole | RuntimeRole, Action, Resource>);
     allow: (role: DefinitionRole | DefinitionRole[], action: Action | Action[], resource: Resource | Resource[], condition?: ConditionFunction<RuntimeRole, Action, Resource>) => void;
+    copyPermissions: (fromRole: DefinitionRole, toRole: DefinitionRole, options?: {
+        allowOverwrite?: boolean;
+    }) => void;
     can: (role: RuntimeRole | RuntimeRole[], action: Action, resource: Resource, options?: any) => boolean;
     cannot: (role: RuntimeRole | RuntimeRole[], action: Action, resource: Resource, options?: any) => boolean;
     authorize: (role: RuntimeRole | RuntimeRole[], action: Action, resource: Resource, options?: any) => void;
@@ -12,6 +15,6 @@ export declare class CanAlready<DefinitionRole = string, RuntimeRole = Definitio
     private setPermission;
     private checkPermission;
     private findAllowedRoles;
-    private parseRoleFromKey;
+    private resolveRoleString;
     private logDebug;
 }

@@ -16,34 +16,50 @@ class CanAlready {
                 }
             }
         };
-        this.can = (role, action, resource, options) => {
-            let result = false;
-            const roles = Array.isArray(role) ? role : [role];
-            for (const r of roles) {
-                result = this.checkPermission(r, action, resource, options);
-                if (result)
-                    break;
+        this.copyPermissions = (fromRole, toRole, options) => {
+            const fromKey = this.options.roleResolver(fromRole);
+            const toKey = this.options.roleResolver(toRole);
+            const sourcePermissions = this.storage[fromKey];
+            if (!sourcePermissions) {
+                throw new Error(`No permissions found for role '${fromKey}'`);
             }
+            if (!options?.allowOverwrite) {
+                for (const action in sourcePermissions) {
+                    for (const resource in sourcePermissions[action]) {
+                        if (this.storage[toKey]?.[action]?.[resource] !== undefined) {
+                            throw new Error(`Permission conflict: role '${toKey}' already has a permission for action '${action}' on resource '${resource}'`);
+                        }
+                    }
+                }
+            }
+            if (!this.storage[toKey]) {
+                this.storage[toKey] = {};
+            }
+            for (const action in sourcePermissions) {
+                if (!this.storage[toKey][action]) {
+                    this.storage[toKey][action] = {};
+                }
+                for (const resource in sourcePermissions[action]) {
+                    this.storage[toKey][action][resource] = sourcePermissions[action][resource];
+                }
+            }
+        };
+        this.can = (role, action, resource, options) => {
+            const roles = Array.isArray(role) ? role : [role];
+            const result = roles.some(r => this.checkPermission(r, action, resource, options));
             if (this.options.debug) {
                 this.logDebug('can', role, action, resource, result);
             }
             return result;
         };
         this.cannot = (role, action, resource, options) => {
-            const result = !this.can(role, action, resource, options);
-            if (this.options.debug) {
-                this.logDebug('cannot', role, action, resource, result);
-            }
-            return result;
+            return !this.can(role, action, resource, options);
         };
         this.authorize = (role, action, resource, options) => {
             const canAccess = this.can(role, action, resource, options);
             if (!canAccess) {
-                const allowedRoles = this.findAllowedRoles(action, resource, options);
-                const roleString = Array.isArray(role)
-                    ? role.map(r => this.options.roleResolver(r)).join(',')
-                    : this.options.roleResolver(role);
-                const message = `Access denied for role '${roleString}' to perform '${this.options.actionResolver(action)}' on '${this.options.resourceResolver(resource)}'`;
+                const allowedRoles = this.findAllowedRoles(action, resource);
+                const message = `Access denied for role '${this.resolveRoleString(role)}' to perform '${this.options.actionResolver(action)}' on '${this.options.resourceResolver(resource)}'`;
                 throw this.options.errorFactory(message, allowedRoles);
             }
             if (this.options.debug) {
@@ -137,21 +153,13 @@ class CanAlready {
                     return permission;
                 }
                 else if (typeof permission === 'function') {
-                    try {
-                        return permission(role, action, resource, options);
-                    }
-                    catch (error) {
-                        if (this.options.debug) {
-                            console.debug('Condition function error:', error);
-                        }
-                        return false;
-                    }
+                    return permission(role, action, resource, options);
                 }
             }
         }
         return false;
     }
-    findAllowedRoles(action, resource, options) {
+    findAllowedRoles(action, resource) {
         const actionKey = this.options.actionResolver(action);
         const resourceKey = this.options.resourceResolver(resource);
         const allowedRoles = [];
@@ -164,37 +172,25 @@ class CanAlready {
             ];
             for (const [a, res] of checkPaths) {
                 const permission = this.storage[roleKey]?.[a]?.[res];
-                if (permission !== undefined) {
-                    let hasPermission = false;
-                    if (typeof permission === 'boolean') {
-                        hasPermission = permission;
-                    }
-                    else if (typeof permission === 'function') {
-                        try {
-                            hasPermission = permission(this.parseRoleFromKey(roleKey), action, resource, options);
-                        }
-                        catch (error) {
-                            hasPermission = false;
-                        }
-                    }
-                    if (hasPermission && !allowedRoles.includes(roleKey)) {
+                if (permission === true || typeof permission === 'function') {
+                    if (!allowedRoles.includes(roleKey)) {
                         allowedRoles.push(roleKey);
-                        break;
                     }
+                    break;
                 }
             }
         }
         return allowedRoles;
     }
-    parseRoleFromKey(roleKey) {
-        return roleKey;
+    resolveRoleString(role) {
+        return Array.isArray(role)
+            ? role.map(r => this.options.roleResolver(r)).join(',')
+            : this.options.roleResolver(role);
     }
     logDebug(operation, role, action, resource, result) {
         const debugInfo = {
             operation,
-            role: Array.isArray(role)
-                ? role.map(r => this.options.roleResolver(r)).join(',')
-                : this.options.roleResolver(role),
+            role: this.resolveRoleString(role),
             action: this.options.actionResolver(action),
             resource: this.options.resourceResolver(resource),
             result,
