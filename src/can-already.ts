@@ -7,6 +7,10 @@ import {
   SerializablePermission
 } from './types';
 
+const MANAGE_ACTION = 'manage';
+const WILDCARD_ACTION = '*';
+const WILDCARD_ACTIONS = new Set<string>([MANAGE_ACTION, WILDCARD_ACTION]);
+
 export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, Action = string, Resource = string> {
   private storage: PermissionStorage<RuntimeRole, Action, Resource> = {};
   private options: CanAlreadyOptions<DefinitionRole | RuntimeRole, Action, Resource>;
@@ -79,14 +83,8 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
     resource: Resource,
     options?: any
   ): boolean => {
-    const roles = Array.isArray(role) ? role : [role];
-    const result = roles.some(r => this.checkPermission(r, action, resource, options));
-
-    if (this.options.debug) {
-      this.logDebug('can', role, action, resource, result);
-    }
-
-    return result;
+    this.assertSpecificAction('can', action, resource);
+    return this.evaluateCan(role, action, resource, options);
   };
 
   cannot = (
@@ -95,7 +93,8 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
     resource: Resource,
     options?: any
   ): boolean => {
-    return !this.can(role, action, resource, options);
+    this.assertSpecificAction('cannot', action, resource);
+    return !this.evaluateCan(role, action, resource, options);
   };
 
   authorize = (
@@ -104,9 +103,9 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
     resource: Resource,
     options?: any
   ): void => {
-    const canAccess = this.can(role, action, resource, options);
-    
-    if (!canAccess) {
+    this.assertSpecificAction('authorize', action, resource);
+
+    if (!this.evaluateCan(role, action, resource, options)) {
       const allowedRoles = this.findAllowedRoles(action, resource);
       const message = `Access denied for role '${this.resolveRoleString(role)}' to perform '${this.options.actionResolver(action)}' on '${this.options.resourceResolver(resource)}'`;
       throw this.options.errorFactory(message, allowedRoles);
@@ -174,6 +173,33 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
     }
   };
 
+  private assertSpecificAction(method: 'can' | 'cannot' | 'authorize', action: Action, resource: Resource): void {
+    const actionKey = this.options.actionResolver(action);
+    if (WILDCARD_ACTIONS.has(actionKey)) {
+      throw new Error(
+        `${method}() called with wildcard action '${actionKey}' on '${this.options.resourceResolver(resource)}'. ` +
+        `Checking a wildcard action is an anti-pattern: it only succeeds when the caller has been granted every action on the resource. ` +
+        `Check the specific action the caller is about to perform instead.`
+      );
+    }
+  }
+
+  private evaluateCan(
+    role: RuntimeRole | RuntimeRole[],
+    action: Action,
+    resource: Resource,
+    options?: any
+  ): boolean {
+    const roles = Array.isArray(role) ? role : [role];
+    const result = roles.some(r => this.checkPermission(r, action, resource, options));
+
+    if (this.options.debug) {
+      this.logDebug('can', role, action, resource, result);
+    }
+
+    return result;
+  }
+
   private setPermission(
     role: DefinitionRole,
     action: Action,
@@ -184,8 +210,8 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
     let actionKey = this.options.actionResolver(action);
     const resourceKey = this.options.resourceResolver(resource);
 
-    // Normalize "manage" to "*" for performance optimization
-    if (actionKey === 'manage') {
+    // 'manage' is an alias for the wildcard action key; collapse for storage.
+    if (actionKey === MANAGE_ACTION) {
       actionKey = '*';
     }
 

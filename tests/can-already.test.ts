@@ -169,9 +169,9 @@ describe('CanAlready', () => {
     it('should log debug info when debug is enabled', () => {
       const debugCanAlready = new CanAlready({ ...defaultOptions, debug: true });
       debugCanAlready.allow(UserRole.USER, UserAction.READ, UserResource.POST);
-      
+
       debugCanAlready.can(UserRole.USER, UserAction.READ, UserResource.POST);
-      
+
       expect(consoleDebugSpy).toHaveBeenCalledWith('CanAlready:', expect.objectContaining({
         operation: 'can',
         role: 'user',
@@ -179,6 +179,18 @@ describe('CanAlready', () => {
         resource: 'post',
         result: true
       }));
+    });
+
+    it('should throw when called with wildcard action "manage" (anti-pattern)', () => {
+      expect(() => {
+        canAlready.can(UserRole.ADMIN, 'manage' as any, UserResource.POST);
+      }).toThrow(/can\(\) called with wildcard action 'manage' on 'post'.*anti-pattern/s);
+    });
+
+    it('should throw when called with wildcard action "*" (anti-pattern)', () => {
+      expect(() => {
+        canAlready.can(UserRole.ADMIN, '*' as any, UserResource.POST);
+      }).toThrow(/can\(\) called with wildcard action '\*' on 'post'.*anti-pattern/s);
     });
   });
 
@@ -193,6 +205,18 @@ describe('CanAlready', () => {
 
     it('should return true for denied permissions', () => {
       expect(canAlready.cannot(UserRole.USER, UserAction.WRITE, UserResource.POST)).toBe(true);
+    });
+
+    it('should throw when called with wildcard action "manage" (anti-pattern)', () => {
+      expect(() => {
+        canAlready.cannot(UserRole.ADMIN, 'manage' as any, UserResource.POST);
+      }).toThrow(/cannot\(\) called with wildcard action 'manage' on 'post'.*anti-pattern/s);
+    });
+
+    it('should throw when called with wildcard action "*" (anti-pattern)', () => {
+      expect(() => {
+        canAlready.cannot(UserRole.ADMIN, '*' as any, UserResource.POST);
+      }).toThrow(/cannot\(\) called with wildcard action '\*' on 'post'.*anti-pattern/s);
     });
   });
 
@@ -216,10 +240,22 @@ describe('CanAlready', () => {
 
     it('should include multiple allowed roles in error', () => {
       canAlready.allow(UserRole.MODERATOR, UserAction.DELETE, UserResource.POST);
-      
+
       expect(() => {
         canAlready.authorize(UserRole.USER, UserAction.DELETE, UserResource.POST);
       }).toThrow(/Allowed roles: (admin, moderator|moderator, admin)/);
+    });
+
+    it('should throw when called with wildcard action "manage" (anti-pattern)', () => {
+      expect(() => {
+        canAlready.authorize(UserRole.ADMIN, 'manage' as any, UserResource.POST);
+      }).toThrow(/authorize\(\) called with wildcard action 'manage' on 'post'.*anti-pattern/s);
+    });
+
+    it('should throw when called with wildcard action "*" (anti-pattern)', () => {
+      expect(() => {
+        canAlready.authorize(UserRole.ADMIN, '*' as any, UserResource.POST);
+      }).toThrow(/authorize\(\) called with wildcard action '\*' on 'post'.*anti-pattern/s);
     });
   });
 
