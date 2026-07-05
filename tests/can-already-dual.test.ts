@@ -15,15 +15,16 @@ enum SimpleRole {
 }
 
 describe('CanAlready with Dual Generics', () => {
-  let canAlready: CanAlready<SimpleRole, UserRole, string, string>;
+  let canAlready: CanAlready<SimpleRole, UserRole, string, any>;
   let consoleDebugSpy: any;
 
-  const defaultOptions: CanAlreadyOptions<SimpleRole | UserRole, string, string> = {
+  const defaultOptions: CanAlreadyOptions<SimpleRole | UserRole, string, any> = {
     debug: false,
     roleResolver: (role) => typeof role === 'string' ? role : role.role,
     actionResolver: (action) => action,
-    resourceResolver: (resource) => resource,
-    errorFactory: (message, allowedRoles) => 
+    // Record-first: derive the TYPE key from the record; bare strings stay type-level.
+    resourceResolver: (resource) => typeof resource === 'string' ? resource : resource.type,
+    errorFactory: (message, allowedRoles) =>
       new Error(`${message}. Allowed roles: ${allowedRoles.join(', ')}`),
   };
 
@@ -46,8 +47,8 @@ describe('CanAlready with Dual Generics', () => {
 
   describe('Dual-generic functionality', () => {
     beforeEach(() => {
-      const isSameOrganisation = (role: UserRole, action: string, resource: string, context: any) => 
-        role.organisationId === context.record?.organisationId;
+      const isSameOrganisation = (role: UserRole, action: string, post: any) =>
+        role.organisationId === post.organisationId;
 
       canAlready.allow(SimpleRole.ADMIN, '*', '*');
       canAlready.allow(SimpleRole.USER, 'read', 'post');
@@ -70,18 +71,18 @@ describe('CanAlready with Dual Generics', () => {
       expect(canAlready.can(regularUser, 'read', 'post')).toBe(true);
       expect(canAlready.can(regularUser, 'write', 'post')).toBe(false);
       
-      expect(canAlready.can(moderatorUser, 'delete', 'post', { 
-        record: { organisationId: 'org1' } 
+      expect(canAlready.can(moderatorUser, 'delete', {
+        type: 'post', organisationId: 'org1'
       })).toBe(true);
-      
-      expect(canAlready.can(moderatorUser, 'delete', 'post', { 
-        record: { organisationId: 'org2' } 
+
+      expect(canAlready.can(moderatorUser, 'delete', {
+        type: 'post', organisationId: 'org2'
       })).toBe(false);
     });
 
-    it('should work with condition functions using runtime role context', () => {
-      const ownershipCondition = (role: UserRole, action: string, resource: string, context: any) => {
-        return role.userId === context.record?.ownerId;
+    it('should work with condition functions reading fields off the record', () => {
+      const ownershipCondition = (role: UserRole, action: string, profile: any) => {
+        return role.userId === profile.ownerId;
       };
 
       canAlready.allow(SimpleRole.USER, 'edit', 'profile', ownershipCondition);
@@ -89,17 +90,30 @@ describe('CanAlready with Dual Generics', () => {
       const user1 = createUserRole('user', '1', 'org1');
       const user2 = createUserRole('user', '2', 'org1');
 
-      expect(canAlready.can(user1, 'edit', 'profile', { 
-        record: { ownerId: '1' } 
+      expect(canAlready.can(user1, 'edit', {
+        type: 'profile', ownerId: '1'
       })).toBe(true);
-      
-      expect(canAlready.can(user1, 'edit', 'profile', { 
-        record: { ownerId: '2' } 
+
+      expect(canAlready.can(user1, 'edit', {
+        type: 'profile', ownerId: '2'
       })).toBe(false);
-      
-      expect(canAlready.can(user2, 'edit', 'profile', { 
-        record: { ownerId: '2' } 
+
+      expect(canAlready.can(user2, 'edit', {
+        type: 'profile', ownerId: '2'
       })).toBe(true);
+    });
+
+    it('should read genuinely external context from the 4th options argument', () => {
+      const canMoveWithinOrg = (role: UserRole, action: string, doc: any, options?: any) =>
+        doc.organisationId === role.organisationId && options?.targetFolderId != null;
+
+      canAlready.allow(SimpleRole.USER, 'move', 'document', canMoveWithinOrg);
+
+      const user = createUserRole('user', '1', 'org1');
+      const doc = { type: 'document', organisationId: 'org1' };
+
+      expect(canAlready.can(user, 'move', doc, { targetFolderId: 'f-1' })).toBe(true);
+      expect(canAlready.can(user, 'move', doc)).toBe(false);
     });
 
     it('should support multi-role runtime evaluation', () => {
@@ -107,8 +121,8 @@ describe('CanAlready with Dual Generics', () => {
       const moderator = createUserRole('moderator', '1', 'org1');
 
       expect(canAlready.can([user, moderator], 'read', 'post')).toBe(true);
-      expect(canAlready.can([user, moderator], 'delete', 'post', { 
-        record: { organisationId: 'org1' } 
+      expect(canAlready.can([user, moderator], 'delete', {
+        type: 'post', organisationId: 'org1'
       })).toBe(true);
     });
 
@@ -139,14 +153,14 @@ describe('CanAlready with Dual Generics', () => {
 
   describe('Complex scenarios', () => {
     it('should handle complex organizational permissions', () => {
-      const isManagerInSameOrg = (role: UserRole, action: string, resource: string, context: any) => {
-        return role.role === 'manager' && 
-               role.organisationId === context.record?.organisationId;
+      const isManagerInSameOrg = (role: UserRole, action: string, report: any) => {
+        return role.role === 'manager' &&
+               role.organisationId === report.organisationId;
       };
 
-      const isOwnerOrManager = (role: UserRole, action: string, resource: string, context: any) => {
-        return role.userId === context.record?.ownerId || 
-               (role.role === 'manager' && role.organisationId === context.record?.organisationId);
+      const isOwnerOrManager = (role: UserRole, action: string, doc: any) => {
+        return role.userId === doc.ownerId ||
+               (role.role === 'manager' && role.organisationId === doc.organisationId);
       };
 
       canAlready.allow('manager', 'read', 'reports', isManagerInSameOrg);
@@ -156,20 +170,20 @@ describe('CanAlready with Dual Generics', () => {
       const user = createUserRole('user', '2', 'org1');
       const userDiffOrg = createUserRole('user', '3', 'org2');
 
-      expect(canAlready.can(manager, 'read', 'reports', {
-        record: { organisationId: 'org1' }
+      expect(canAlready.can(manager, 'read', {
+        type: 'reports', organisationId: 'org1'
       })).toBe(true);
 
-      expect(canAlready.can(manager, 'read', 'reports', {
-        record: { organisationId: 'org2' }
+      expect(canAlready.can(manager, 'read', {
+        type: 'reports', organisationId: 'org2'
       })).toBe(false);
 
-      expect(canAlready.can(user, 'edit', 'document', {
-        record: { ownerId: '2', organisationId: 'org1' }
+      expect(canAlready.can(user, 'edit', {
+        type: 'document', ownerId: '2', organisationId: 'org1'
       })).toBe(true);
 
-      expect(canAlready.can(userDiffOrg, 'edit', 'document', {
-        record: { ownerId: '2', organisationId: 'org1' }
+      expect(canAlready.can(userDiffOrg, 'edit', {
+        type: 'document', ownerId: '2', organisationId: 'org1'
       })).toBe(false);
     });
 
@@ -223,7 +237,7 @@ describe('CanAlready with Dual Generics', () => {
 
   describe('Debug mode with dual generics', () => {
     it('should log debug info with proper role resolution', () => {
-      const debugCanAlready = new CanAlready<SimpleRole, UserRole, string, string>({ ...defaultOptions, debug: true });
+      const debugCanAlready = new CanAlready<SimpleRole, UserRole, string, any>({ ...defaultOptions, debug: true });
       debugCanAlready.allow(SimpleRole.USER, 'read', 'post');
       
       const user = createUserRole('user', '1', 'org1');

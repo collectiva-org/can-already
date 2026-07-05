@@ -53,7 +53,16 @@ can(UserRole.USER, UserAction.READ, UserResource.POST); // true
 cannot(UserRole.USER, UserAction.DELETE, UserResource.POST); // true
 ```
 
-### Enhanced Approach (Dual-Generic)
+> For object-level checks (conditions that inspect the record), pass the actual record as the
+> third argument — see [Enhanced Approach](#enhanced-approach-dual-generic-record-first).
+
+### Enhanced Approach (Dual-Generic, record-first)
+
+Pass the **actual record** you are authorizing as the third argument. The
+`resourceResolver` derives the record's **type** key (used for the O(1) lookup), and
+condition functions receive that same record object as their third parameter — so they
+read fields straight off it. No side-context bundle needed.
+
 ```typescript
 import { CanAlready } from 'can-already';
 
@@ -63,25 +72,38 @@ interface UserContext {
   organisationId: string;
 }
 
+interface Team {
+  type: 'team';
+  id: string;
+  organisationId: string;
+}
+
 // Clean permission definitions, rich runtime context
-const canAlready = new CanAlready<string, UserContext, string, string>({
+const canAlready = new CanAlready<string, UserContext, string, Team>({
   roleResolver: (role) => typeof role === 'string' ? role : role.role,
   actionResolver: (action) => action,
-  resourceResolver: (resource) => resource,
+  // resolver returns the record's TYPE, not its identity
+  resourceResolver: (record) => record.type,
   errorFactory: (message, allowedRoles) => new Error(`${message}. Allowed: ${allowedRoles.join(', ')}`)
 });
 
 // Clean, readable permission definitions
 canAlready.allow('admin', '*', '*');
 canAlready.allow('user', 'read', 'post');
-canAlready.allow('manager', 'manage', 'team', (user, action, resource, context) => 
-  user.organisationId === context.record?.organisationId
+// condition reads fields directly off the record (4th param unused)
+canAlready.allow('manager', 'manage', 'team', (user, action, team) =>
+  user.organisationId === team.organisationId
 );
 
-// Rich runtime context for authorization
+// Authorize the real record
 const user = { userId: '123', role: 'manager', organisationId: 'acme-corp' };
-canAlready.can(user, 'delete', 'team', { record: { organisationId: 'acme-corp' } }); // true
+const team = { type: 'team', id: 't1', organisationId: 'acme-corp' };
+canAlready.can(user, 'delete', team); // true
 ```
+
+> The 4th `options` argument still exists for genuinely external context (see
+> [Call forms](#resolving-the-resource)), but the record itself belongs in the 3rd
+> argument — not smuggled into `options.record`.
 
 ## Advanced Usage
 
@@ -98,10 +120,11 @@ interface UserRole {
   organisationId: string;
 }
 
-const canAlready = new CanAlreadyDual<string, UserRole, string, string>({
+const canAlready = new CanAlready<string, UserRole, string, Post>({
   roleResolver: (role) => typeof role === 'string' ? role : role.role,
   actionResolver: (action) => action,
-  resourceResolver: (resource) => resource,
+  // derive the TYPE key from the record
+  resourceResolver: (record) => record.type,
   errorFactory: (message, allowedRoles) => new Error(`${message}. Allowed: ${allowedRoles.join(', ')}`)
 });
 
@@ -111,13 +134,13 @@ allow('ADMIN', '*', '*');
 allow('MODERATOR', 'manage', 'post', isSameOrganisation);
 allow('USER', 'read', 'post');
 
-// Rich context available in conditions
-const isSameOrganisation = (role: UserRole, action: string, resource: string, context: any) => 
-  role.organisationId === context.record?.organisationId;
+// Condition receives the runtime role and the actual record
+const isSameOrganisation = (role: UserRole, action: string, post: Post) =>
+  role.organisationId === post.organisationId;
 
-// Runtime calls with full user context objects
+// Runtime calls: pass the record you fetched
 const userContext = { userId: '123', role: 'moderator', organisationId: 'org1' };
-authorize(userContext, 'delete', 'post', { record: targetPost });
+authorize(userContext, 'delete', targetPost);
 ```
 
 #### Complex Authorization Scenarios
@@ -130,35 +153,29 @@ allow('MANAGER', 'read', 'reports', isManagerInSameOrg);
 allow('USER', 'edit', 'document', isOwnerOrManager);
 allow('ADMIN', '*', '*'); // Admins can do everything
 
-// Condition functions receive rich runtime context
-const isManagerInSameOrg = (user: UserRole, action: string, resource: string, context: any) => {
-  return user.role === 'manager' && 
-         user.organisationId === context.record?.organisationId;
+// Condition functions receive the runtime role and the actual record
+const isManagerInSameOrg = (user: UserRole, action: string, report: any) => {
+  return user.role === 'manager' &&
+         user.organisationId === report.organisationId;
 };
 
-const isOwnerOrManager = (user: UserRole, action: string, resource: string, context: any) => {
-  return user.userId === context.record?.ownerId || 
-         (user.role === 'manager' && user.organisationId === context.record?.organisationId);
+const isOwnerOrManager = (user: UserRole, action: string, doc: any) => {
+  return user.userId === doc.ownerId ||
+         (user.role === 'manager' && user.organisationId === doc.organisationId);
 };
 
-// Runtime evaluation with complete user context
+// Runtime evaluation with the fetched records
 const manager = { userId: '1', role: 'manager', organisationId: 'acme-corp' };
 const employee = { userId: '2', role: 'user', organisationId: 'acme-corp' };
 
 // Manager can read reports in their organization
-can(manager, 'read', 'reports', { 
-  record: { organisationId: 'acme-corp' } 
-}); // true
+can(manager, 'read', { type: 'reports', organisationId: 'acme-corp' }); // true
 
 // Employee can edit their own documents
-can(employee, 'edit', 'document', { 
-  record: { ownerId: '2', organisationId: 'acme-corp' } 
-}); // true
+can(employee, 'edit', { type: 'document', ownerId: '2', organisationId: 'acme-corp' }); // true
 
 // Multi-role users get permissions from any of their roles
-can([manager, employee], 'read', 'reports', { 
-  record: { organisationId: 'acme-corp' } 
-}); // true (manager role grants access)
+can([manager, employee], 'read', { type: 'reports', organisationId: 'acme-corp' }); // true (manager role grants access)
 ```
 
 ### Multi-Role Support
@@ -180,22 +197,39 @@ can(userRoles, UserAction.READ, UserResource.FEATURE); // Still very fast!
 
 ### Condition Functions
 
+Conditions receive `(role, action, resource, options)`. The `resource` is the record you
+passed as the 3rd argument — read fields off it directly. Reach for the 4th `options`
+argument only for context that is *not* part of the record.
+
 ```typescript
-// Dynamic permissions with conditions
-allow(UserRole.USER, UserAction.UPDATE, UserResource.PROFILE, 
-  (role, action, resource, options) => {
-    return options?.userId === options?.profileUserId;
-  }
+// Dynamic permission: user may update their own profile
+allow('user', 'update', 'profile',
+  (user, action, profile) => user.id === profile.userId
 );
 
-// Check with context
-can(UserRole.USER, UserAction.UPDATE, UserResource.PROFILE, {
-  userId: 1,
-  profileUserId: 1
-}); // true
+// Pass the actual profile record
+const user = { id: 1, role: 'user' };
+const profile = { type: 'profile', userId: 1 };
+can(user, 'update', profile); // true
+```
+
+When a check genuinely needs external context alongside the record (e.g. a target OU that
+is not a field on the record), put it in the 4th `options` argument:
+
+```typescript
+allow('user', 'move', 'document',
+  (user, action, doc, options) =>
+    doc.ownerId === user.id && options?.targetFolderId != null
+);
+
+can(user, 'move', doc, { targetFolderId: 'f-42' });
 ```
 
 ### Complex Object Resolvers
+
+The `resourceResolver` must return the record's **type**, not its identity. Keying on the
+instance id (e.g. `` `post_${post.id}` ``) would register a separate permission entry per
+record, so an `allow` on one post would never match a `can` on another.
 
 ```typescript
 interface User { id: number; role: string; }
@@ -204,14 +238,16 @@ interface Post { id: number; authorId: number; }
 const canAlready = new CanAlready<User, string, Post>({
   roleResolver: (user) => user.role,
   actionResolver: (action) => action,
-  resourceResolver: (post) => `post_${post.id}`,
+  resourceResolver: (post) => 'post', // TYPE key, shared by all posts
   errorFactory: (message, allowedRoles) => new Error(message)
 });
 
-const user = { id: 1, role: 'author' };
+const author = { id: 1, role: 'author' };
 const post = { id: 123, authorId: 1 };
 
-allow(user, 'update', post, (u, a, p) => u.id === p.authorId);
+// The condition reads the record; per-record scoping lives here, not in the resolver.
+canAlready.allow('author', 'update', 'post', (u, a, p) => u.id === p.authorId);
+canAlready.can(author, 'update', post); // true
 ```
 
 ### Export/Import Permissions
@@ -277,6 +313,29 @@ interface CanAlreadyOptions<Role, Action, Resource> {
 #### Data Management
 - `exportPermissions(definitionRoles[])` - Export permissions for specified roles as JSON string
 - `importPermissions(permissionsJson)` - Import permissions from JSON string
+
+### Resolving the resource
+
+The 3rd argument to `can`/`cannot`/`authorize` is the **actual resource being authorized** —
+pass the record you fetched, not a string describing its type.
+
+- `resourceResolver(resource)` must return the resource's **type** key (e.g. `'post'`), never
+  its identity. The key drives the O(1) lookup; identity-based keys break `allow`/`can` matching.
+- Condition functions receive that same resource object as their 3rd parameter — read fields off
+  it directly (`(user, action, post) => user.id === post.authorId`).
+- The 4th `options` argument is for context that is **not** part of the record (e.g. a target
+  location). Do not put the record itself in `options`.
+
+Accepted call forms:
+
+| Form | When |
+| --- | --- |
+| `authorize(user, action, record)` | **Canonical.** The record carries everything the condition needs. |
+| `authorize(user, action, record, { ...ctx })` | Record + external context a condition needs. |
+| `authorize(user, action, 'type')` | Type-only checks with no per-record condition (still supported). |
+
+The bare-string form remains valid for coarse, type-level permissions, but prefer passing the
+record whenever a condition inspects it.
 
 ## Wildcard Support
 
