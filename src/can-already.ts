@@ -100,19 +100,23 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
   authorize = (
     role: RuntimeRole | RuntimeRole[],
     action: Action,
-    resource: Resource,
+    resource: Resource | Resource[],
     options?: any
   ): void => {
-    this.assertSpecificAction('authorize', action, resource);
+    const resources = Array.isArray(resource) ? resource : [resource];
 
-    if (!this.evaluateCan(role, action, resource, options)) {
-      const allowedRoles = this.findAllowedRoles(action, resource);
-      const message = `Access denied for role '${this.resolveRoleString(role)}' to perform '${this.options.actionResolver(action)}' on '${this.options.resourceResolver(resource)}'`;
-      throw this.options.errorFactory(message, allowedRoles);
-    }
+    for (const res of resources) {
+      this.assertSpecificAction('authorize', action, res);
 
-    if (this.options.debug) {
-      this.logDebug('authorize', role, action, resource, true);
+      if (!this.evaluateCan(role, action, res, options)) {
+        const allowedRoles = this.findAllowedRoles(action, res);
+        const message = `Access denied for role '${this.resolveRoleString(role)}' to perform '${this.options.actionResolver(action)}' on '${this.options.resourceResolver(res)}'`;
+        throw this.options.errorFactory(message, allowedRoles);
+      }
+
+      if (this.options.debug) {
+        this.logDebug('authorize', role, action, res, true);
+      }
     }
   };
 

@@ -308,7 +308,7 @@ interface CanAlreadyOptions<Role, Action, Resource> {
 #### Runtime Authorization  
 - `can(runtimeRole | runtimeRole[], action, resource, options?)` - Check permissions using runtime types (e.g., user context objects)
 - `cannot(runtimeRole | runtimeRole[], action, resource, options?)` - Inverse of `can()`
-- `authorize(runtimeRole | runtimeRole[], action, resource, options?)` - Like `can()` but throws error if access denied
+- `authorize(runtimeRole | runtimeRole[], action, resource | resource[], options?)` - Like `can()` but throws error if access denied. Pass an array of resources to authorize a whole collection: every resource must pass (AND), and it throws on the first denied one. An empty array passes (nothing to authorize).
 
 #### Data Management
 - `exportPermissions(definitionRoles[])` - Export permissions for specified roles as JSON string

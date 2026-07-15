@@ -257,6 +257,30 @@ describe('CanAlready', () => {
         canAlready.authorize(UserRole.ADMIN, '*' as any, UserResource.POST);
       }).toThrow(/authorize\(\) called with wildcard action '\*' on 'post'.*anti-pattern/s);
     });
+
+    it('should not throw when every resource in array is allowed', () => {
+      expect(() => {
+        canAlready.authorize(UserRole.USER, UserAction.READ, [
+          UserResource.POST,
+          UserResource.POST,
+        ]);
+      }).not.toThrow();
+    });
+
+    it('should throw on first denied resource in array (AND, fail-fast)', () => {
+      expect(() => {
+        canAlready.authorize(UserRole.USER, UserAction.READ, [
+          UserResource.POST,
+          UserResource.PROFILE,
+        ]);
+      }).toThrow('Access denied for role \'user\' to perform \'read\' on \'profile\'. Allowed roles: admin');
+    });
+
+    it('should not throw for an empty resource array', () => {
+      expect(() => {
+        canAlready.authorize(UserRole.USER, UserAction.DELETE, []);
+      }).not.toThrow();
+    });
   });
 
   describe('exportPermissions()', () => {
