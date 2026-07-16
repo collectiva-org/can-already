@@ -11,11 +11,11 @@ const MANAGE_ACTION = 'manage';
 const WILDCARD_ACTION = '*';
 const WILDCARD_ACTIONS = new Set<string>([MANAGE_ACTION, WILDCARD_ACTION]);
 
-export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, Action = string, Resource = string> {
+export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, Action = string, Resource = string, ResourceType = Resource> {
   private storage: PermissionStorage<RuntimeRole, Action, Resource> = {};
-  private options: CanAlreadyOptions<DefinitionRole | RuntimeRole, Action, Resource>;
+  private options: CanAlreadyOptions<DefinitionRole | RuntimeRole, Action, Resource, ResourceType>;
 
-  constructor(options: CanAlreadyOptions<DefinitionRole | RuntimeRole, Action, Resource>) {
+  constructor(options: CanAlreadyOptions<DefinitionRole | RuntimeRole, Action, Resource, ResourceType>) {
     this.options = options;
   }
 
@@ -83,7 +83,7 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
     resource: Resource,
     options?: any
   ): boolean => {
-    this.assertSpecificAction('can', action, resource);
+    this.assertSpecificAction('can', this.options.actionResolver(action), this.options.resourceResolver(resource));
     return this.evaluateCan(role, action, resource, options);
   };
 
@@ -93,7 +93,7 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
     resource: Resource,
     options?: any
   ): boolean => {
-    this.assertSpecificAction('cannot', action, resource);
+    this.assertSpecificAction('cannot', this.options.actionResolver(action), this.options.resourceResolver(resource));
     return !this.evaluateCan(role, action, resource, options);
   };
 
@@ -104,19 +104,58 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
     options?: any
   ): void => {
     const resources = Array.isArray(resource) ? resource : [resource];
+    const actionKey = this.options.actionResolver(action);
 
     for (const res of resources) {
-      this.assertSpecificAction('authorize', action, res);
+      const resourceKey = this.options.resourceResolver(res);
+      this.assertSpecificAction('authorize', actionKey, resourceKey);
 
       if (!this.evaluateCan(role, action, res, options)) {
-        const allowedRoles = this.findAllowedRoles(action, res);
-        const message = `Access denied for role '${this.resolveRoleString(role)}' to perform '${this.options.actionResolver(action)}' on '${this.options.resourceResolver(res)}'`;
-        throw this.options.errorFactory(message, allowedRoles);
+        throw this.denyError(this.resolveRoleString(role), actionKey, resourceKey);
       }
 
       if (this.options.debug) {
         this.logDebug('authorize', role, action, res, true);
       }
+    }
+  };
+
+  /**
+   * Condition-blind pre-gate. Passes iff at least one supplied role has a matching allow() rule
+   * for `action` on `resourceType`; condition functions are never invoked. Throws the SAME error
+   * as authorize()'s denial.
+   *
+   * Necessary but not sufficient: use it to reject a forbidden request before loading records
+   * (so an empty result can't leak resource existence). authorize() remains the authoritative,
+   * record-bound decision.
+   */
+  assertAuthorizable = (
+    role: RuntimeRole | RuntimeRole[],
+    action: Action,
+    resourceType: ResourceType
+  ): void => {
+    const actionKey = this.options.actionResolver(action);
+    // Fallback is valid only in the default case where ResourceType === Resource (token IS the record).
+    const resolveType = this.options.resourceTypeResolver
+      ?? (this.options.resourceResolver as unknown as (t: ResourceType) => string);
+    const resourceKey = resolveType(resourceType);
+
+    if (resourceKey == null || resourceKey === '') {
+      throw new Error(
+        'assertAuthorizable: could not resolve resource type key. ' +
+        'Supply resourceTypeResolver when the type token differs from the Resource record type.'
+      );
+    }
+
+    this.assertSpecificAction('assertAuthorizable', actionKey, resourceKey);
+
+    const roles = Array.isArray(role) ? role : [role];
+    const reachable = roles.some(r =>
+      this.roleHasRule(this.options.roleResolver(r), actionKey, resourceKey)
+    );
+
+    if (!reachable) {
+      throw this.denyError(this.resolveRoleString(role), actionKey, resourceKey);
     }
   };
 
@@ -177,15 +216,50 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
     }
   };
 
-  private assertSpecificAction(method: 'can' | 'cannot' | 'authorize', action: Action, resource: Resource): void {
-    const actionKey = this.options.actionResolver(action);
+  private assertSpecificAction(
+    method: 'can' | 'cannot' | 'authorize' | 'assertAuthorizable',
+    actionKey: string,
+    resourceLabel: string
+  ): void {
     if (WILDCARD_ACTIONS.has(actionKey)) {
       throw new Error(
-        `${method}() called with wildcard action '${actionKey}' on '${this.options.resourceResolver(resource)}'. ` +
+        `${method}() called with wildcard action '${actionKey}' on '${resourceLabel}'. ` +
         `Checking a wildcard action is an anti-pattern: it only succeeds when the caller has been granted every action on the resource. ` +
         `Check the specific action the caller is about to perform instead.`
       );
     }
+  }
+
+  // The role/action/resource lookup paths, most-specific first, with wildcard fallbacks.
+  // Single source shared by checkPermission and roleHasRule so the two can't drift.
+  private lookupPaths(roleKey: string, actionKey: string, resourceKey: string): string[][] {
+    return [
+      [roleKey, actionKey, resourceKey],
+      [roleKey, '*', resourceKey],
+      [roleKey, actionKey, '*'],
+      [roleKey, '*', '*'],
+      ['*', actionKey, resourceKey],
+      ['*', '*', resourceKey],
+      ['*', actionKey, '*'],
+      ['*', '*', '*']
+    ];
+  }
+
+  // Condition-blind reachability: mirrors checkPermission's paths but NEVER invokes condition
+  // functions — a stored `true` or `function` both count as "a rule exists".
+  private roleHasRule(roleKey: string, actionKey: string, resourceKey: string): boolean {
+    return this.lookupPaths(roleKey, actionKey, resourceKey).some(([r, a, res]) => {
+      const permission = this.storage[r]?.[a]?.[res];
+      return permission === true || typeof permission === 'function';
+    });
+  }
+
+  // Shared deny path for authorize() and assertAuthorizable() — keeps the ForbiddenError shape and
+  // allowedRoles identical across both.
+  private denyError(roleLabel: string, actionKey: string, resourceKey: string): Error {
+    const allowedRoles = this.findAllowedRolesByKey(actionKey, resourceKey);
+    const message = `Access denied for role '${roleLabel}' to perform '${actionKey}' on '${resourceKey}'`;
+    return this.options.errorFactory(message, allowedRoles);
   }
 
   private evaluateCan(
@@ -239,18 +313,7 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
     const actionKey = this.options.actionResolver(action);
     const resourceKey = this.options.resourceResolver(resource);
 
-    const checkPaths = [
-      [roleKey, actionKey, resourceKey],
-      [roleKey, '*', resourceKey],
-      [roleKey, actionKey, '*'],
-      [roleKey, '*', '*'],
-      ['*', actionKey, resourceKey],
-      ['*', '*', resourceKey],
-      ['*', actionKey, '*'],
-      ['*', '*', '*']
-    ];
-
-    for (const [r, a, res] of checkPaths) {
+    for (const [r, a, res] of this.lookupPaths(roleKey, actionKey, resourceKey)) {
       const permission = this.storage[r]?.[a]?.[res];
       
       if (permission !== undefined) {
@@ -265,12 +328,10 @@ export class CanAlready<DefinitionRole = string, RuntimeRole = DefinitionRole, A
     return false;
   }
 
-  private findAllowedRoles(
-    action: Action,
-    resource: Resource,
+  private findAllowedRolesByKey(
+    actionKey: string,
+    resourceKey: string,
   ): string[] {
-    const actionKey = this.options.actionResolver(action);
-    const resourceKey = this.options.resourceResolver(resource);
     const allowedRoles: string[] = [];
 
     for (const roleKey in this.storage) {

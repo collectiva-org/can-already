@@ -309,6 +309,46 @@ interface CanAlreadyOptions<Role, Action, Resource> {
 - `can(runtimeRole | runtimeRole[], action, resource, options?)` - Check permissions using runtime types (e.g., user context objects)
 - `cannot(runtimeRole | runtimeRole[], action, resource, options?)` - Inverse of `can()`
 - `authorize(runtimeRole | runtimeRole[], action, resource | resource[], options?)` - Like `can()` but throws error if access denied. Pass an array of resources to authorize a whole collection: every resource must pass (AND), and it throws on the first denied one. An empty array passes (nothing to authorize).
+- `assertAuthorizable(runtimeRole | runtimeRole[], action, resourceType)` - Condition-blind **pre-gate**. See below.
+
+### Pre-gating before you load records: `assertAuthorizable`
+
+`authorize()` needs the actual record because it runs the rule's condition function. But sometimes
+you want to reject a forbidden request **before** querying — so that an empty result set can't leak
+whether a resource exists (e.g. via a `404` vs `403`).
+
+`assertAuthorizable(role, action, resourceType)` answers a coarser question: *"is `action` on
+`resourceType` reachable by any of these roles at all, ignoring per-record conditions?"* It passes
+iff at least one supplied role has a matching `allow()` rule registered — **condition functions are
+never invoked**. On failure it throws the **same error** as `authorize()`'s denial (identical type
+and `allowedRoles`).
+
+Its 3rd argument is a **type token** (e.g. a model class), typed distinctly from the **record**
+`authorize()` takes — so you can't accidentally swap them (either direction is a compile error):
+
+```typescript
+// Pre-gate on the TYPE before touching the database
+assertAuthorizable(user, 'list', sequelize.models.Post);
+
+// Only now load records, then authorize each one (conditions run here)
+const posts = await sequelize.models.Post.findAll({ where: { authorId: user.id } });
+authorize(user, 'list', posts);
+```
+
+**Necessary but not sufficient:** `assertAuthorizable` is only a fast gate. `authorize()` remains
+the authoritative, record-bound decision.
+
+When the type token's type differs from your record type, supply `resourceTypeResolver` to map the
+token to its storage key (it falls back to `resourceResolver` when they are the same type):
+
+```typescript
+const canAlready = new CanAlready<string, UserContext, string, Post, typeof PostModel>({
+  // ...other resolvers
+  resourceResolver: (record) => record.type,        // record instance -> type key
+  resourceTypeResolver: (model) => model.tableName, // type token -> type key
+  errorFactory: (message, allowedRoles) => new Error(message),
+});
+```
 
 #### Data Management
 - `exportPermissions(definitionRoles[])` - Export permissions for specified roles as JSON string

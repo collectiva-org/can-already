@@ -604,8 +604,119 @@ describe('CanAlready', () => {
       };
       
       canAlready.importPermissions(JSON.stringify(permissions));
-      
+
       expect(canAlready.can(UserRole.USER, UserAction.READ, UserResource.POST)).toBe(false);
     });
+  });
+});
+
+// Record instance vs type token are DISTINCT types: authorize() takes the record, assertAuthorizable()
+// takes the token. Config supplies a resourceTypeResolver to key the token.
+interface PostRecord {
+  id: number;
+  type: 'post';
+}
+
+interface ModelToken {
+  typeKey: string;
+}
+
+describe('assertAuthorizable()', () => {
+  const PostModel: ModelToken = { typeKey: 'post' };
+
+  let gate: CanAlready<string, string, string, PostRecord, ModelToken>;
+  let allowedRolesFromError: (error: unknown) => string[];
+
+  beforeEach(() => {
+    gate = new CanAlready<string, string, string, PostRecord, ModelToken>({
+      roleResolver: (role) => role,
+      actionResolver: (action) => action,
+      resourceResolver: (record) => record.type,
+      resourceTypeResolver: (token) => token.typeKey,
+      errorFactory: (message, allowedRoles) =>
+        Object.assign(new Error(message), { allowedRoles }),
+    });
+    allowedRolesFromError = (error) => (error as { allowedRoles: string[] }).allowedRoles;
+  });
+
+  it('passes when a role has an unconditional allow rule', () => {
+    gate.allow('user', 'list', { id: 0, type: 'post' });
+
+    expect(() => gate.assertAuthorizable('user', 'list', PostModel)).not.toThrow();
+  });
+
+  it('passes on a conditional rule without invoking the condition', () => {
+    const condition = vi.fn(() => true);
+    gate.allow('manager', 'list', { id: 0, type: 'post' }, condition);
+
+    expect(() => gate.assertAuthorizable('manager', 'list', PostModel)).not.toThrow();
+    expect(condition).not.toHaveBeenCalled();
+  });
+
+  it('throws the same error shape as authorize() when no rule matches', () => {
+    gate.allow('user', 'list', { id: 0, type: 'post' });
+    gate.allow('manager', 'list', { id: 0, type: 'post' }, () => true);
+
+    const record: PostRecord = { id: 5, type: 'post' };
+    let authorizeError: unknown;
+    let assertError: unknown;
+
+    try {
+      gate.authorize('guest', 'list', record);
+    } catch (error) {
+      authorizeError = error;
+    }
+    try {
+      gate.assertAuthorizable('guest', 'list', PostModel);
+    } catch (error) {
+      assertError = error;
+    }
+
+    expect(authorizeError).toBeInstanceOf(Error);
+    expect(assertError).toBeInstanceOf(Error);
+    expect((assertError as Error).constructor).toBe((authorizeError as Error).constructor);
+    expect((assertError as Error).message).toBe((authorizeError as Error).message);
+    expect(allowedRolesFromError(assertError)).toEqual(allowedRolesFromError(authorizeError));
+    expect(allowedRolesFromError(assertError)).toEqual(['user', 'manager']);
+  });
+
+  it('passes if any role in the array matches, throws if none do', () => {
+    gate.allow('user', 'list', { id: 0, type: 'post' });
+
+    expect(() => gate.assertAuthorizable(['guest', 'user'], 'list', PostModel)).not.toThrow();
+    expect(() => gate.assertAuthorizable(['guest', 'nobody'], 'list', PostModel)).toThrow();
+  });
+
+  it('throws on an empty roles array', () => {
+    gate.allow('user', 'list', { id: 0, type: 'post' });
+
+    expect(() => gate.assertAuthorizable([], 'list', PostModel)).toThrow();
+  });
+
+  it('throws a config error when the type key cannot be resolved', () => {
+    const misconfigured = new CanAlready<string, string, string, PostRecord, ModelToken>({
+      roleResolver: (role) => role,
+      actionResolver: (action) => action,
+      resourceResolver: (record) => record.type,
+      // no resourceTypeResolver: fallback hands the token to resourceResolver, yielding undefined
+      errorFactory: (message) => new Error(message),
+    });
+
+    expect(() => misconfigured.assertAuthorizable('user', 'list', PostModel)).toThrow(
+      /could not resolve resource type key/
+    );
+  });
+
+  it('rejects mixing record and token types at compile time', () => {
+    // Type-checked by tsc via @ts-expect-error, never executed at runtime.
+    const contract = () => {
+      const record: PostRecord = { id: 1, type: 'post' };
+      // @ts-expect-error a record instance is not a type token
+      gate.assertAuthorizable('user', 'list', record);
+      // @ts-expect-error a type token is not a record
+      gate.authorize('user', 'list', PostModel);
+    };
+
+    expect(typeof contract).toBe('function');
   });
 });
