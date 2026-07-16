@@ -1,6 +1,6 @@
 {
   "name": "can-already",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "High-performance TypeScript authorization library with O(1) permission checks",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
